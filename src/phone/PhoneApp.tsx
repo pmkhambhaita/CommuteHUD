@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router';
 import StatusBar from './components/StatusBar';
 import HomePage from './pages/HomePage';
 import SettingsPage from './pages/SettingsPage';
