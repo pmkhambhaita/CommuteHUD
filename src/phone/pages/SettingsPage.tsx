@@ -20,6 +20,16 @@ export default function SettingsPage() {
     <div className="p-4 space-y-6">
       <h1 className="text-lg font-bold text-commute-text">Settings</h1>
 
+      {/* API info */}
+      <div className="p-3 bg-commute-surface rounded-lg border border-commute-accent">
+        <p className="text-sm text-commute-success">
+          Using Transitous open transit API — no API key required
+        </p>
+        <p className="text-xs text-commute-muted mt-1">
+          Data from GTFS feeds via api.transitous.org
+        </p>
+      </div>
+
       {/* Route */}
       <section className="space-y-3">
         <h2 className="text-sm font-bold text-commute-muted uppercase tracking-wider">Route</h2>
@@ -34,13 +44,13 @@ export default function SettingsPage() {
             />
           </label>
           <label className="block">
-            <span className="text-sm text-commute-text">Origin CRS Code</span>
+            <span className="text-sm text-commute-text">Origin Stop ID</span>
             <input
               type="text"
-              value={settings.originCrs}
-              onChange={(e) => settings.updateSettings({ originCrs: e.target.value.toUpperCase() })}
-              maxLength={3}
-              className="mt-1 block w-full bg-commute-surface border border-commute-accent rounded-lg px-3 py-2 text-commute-text text-sm uppercase"
+              value={settings.originStopId}
+              onChange={(e) => settings.updateSettings({ originStopId: e.target.value })}
+              placeholder="e.g. gb:atoc:SVG"
+              className="mt-1 block w-full bg-commute-surface border border-commute-accent rounded-lg px-3 py-2 text-commute-text text-sm font-mono"
             />
           </label>
           <label className="block">
@@ -53,16 +63,31 @@ export default function SettingsPage() {
             />
           </label>
           <label className="block">
-            <span className="text-sm text-commute-text">Destination CRS Code</span>
+            <span className="text-sm text-commute-text">Destination Stop ID</span>
             <input
               type="text"
-              value={settings.destinationCrs}
-              onChange={(e) => settings.updateSettings({ destinationCrs: e.target.value.toUpperCase() })}
-              maxLength={3}
-              className="mt-1 block w-full bg-commute-surface border border-commute-accent rounded-lg px-3 py-2 text-commute-text text-sm uppercase"
+              value={settings.destinationStopId}
+              onChange={(e) => settings.updateSettings({ destinationStopId: e.target.value })}
+              placeholder="e.g. gb:atoc:KGX"
+              className="mt-1 block w-full bg-commute-surface border border-commute-accent rounded-lg px-3 py-2 text-commute-text text-sm font-mono"
             />
           </label>
         </div>
+      </section>
+
+      {/* Tube station */}
+      <section className="space-y-3">
+        <h2 className="text-sm font-bold text-commute-muted uppercase tracking-wider">Tube Station</h2>
+        <label className="block">
+          <span className="text-sm text-commute-text">Tube Stop ID (for transfer info)</span>
+          <input
+            type="text"
+            value={settings.tubeStationStopId}
+            onChange={(e) => settings.updateSettings({ tubeStationStopId: e.target.value })}
+            placeholder="e.g. gb:tfl:940GZZLUKSX"
+            className="mt-1 block w-full bg-commute-surface border border-commute-accent rounded-lg px-3 py-2 text-commute-text text-sm font-mono"
+          />
+        </label>
       </section>
 
       {/* Tube Lines */}
@@ -87,7 +112,7 @@ export default function SettingsPage() {
       <section className="space-y-3">
         <h2 className="text-sm font-bold text-commute-muted uppercase tracking-wider">Alerts</h2>
         <label className="block">
-          <span className="text-sm text-commute-text">Disruption alert threshold (minutes)</span>
+          <span className="text-sm text-commute-text">Alert threshold (minutes delay)</span>
           <input
             type="number"
             value={settings.disruptionThreshold}
@@ -99,7 +124,6 @@ export default function SettingsPage() {
         </label>
       </section>
 
-      {/* Reset */}
       <button
         onClick={() => settings.resetSettings()}
         className="w-full py-2 text-sm text-commute-danger border border-commute-danger/30 rounded-lg hover:bg-commute-danger/10"

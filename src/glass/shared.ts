@@ -9,7 +9,6 @@ import type {
 
 /** Snapshot of all data the glass screens need — derived from Zustand stores */
 export interface AppSnapshot {
-  // Current screen
   screen: ScreenId;
 
   // Departure board
@@ -24,7 +23,7 @@ export interface AppSnapshot {
 
   // Active journey
   activeJourney: {
-    serviceId: string;
+    tripId: string;
     departure: Departure;
     serviceDetail: ServiceDetail | null;
     departureTime: number;
@@ -42,11 +41,11 @@ export interface AppSnapshot {
 
   // Settings
   routeLabel: string;
-  tubeLineIds: string[];
 
-  // Loading states
+  // Status
   isLoading: boolean;
   isForeground: boolean;
+  error: string | null;
 }
 
 /** All possible user input actions dispatched from glass events */
@@ -58,6 +57,23 @@ export type AppAction =
   | { type: 'REFRESH' }
   | { type: 'FOREGROUND_ENTER' }
   | { type: 'FOREGROUND_EXIT' }
-  | { type: 'ABNORMAL_EXIT' }
+  | { type: 'ABNORMAL_EXIT' };
+
+/** Store actions dispatched from glass screen handlers */
+export type StoreAction =
+  | { type: 'MOVE_HIGHLIGHT'; direction: 'up' | 'down' }
+  | { type: 'SELECT_DEPARTURE'; departure: Departure }
+  | { type: 'FORCE_REFRESH' }
+  | { type: 'FORCE_REFRESH_TUBE' }
+  | { type: 'SCROLL_DETAIL'; direction: 'up' | 'down' }
+  | { type: 'START_JOURNEY' }
+  | { type: 'TOGGLE_CANCEL_CONFIRM' }
+  | { type: 'CONFIRM_CANCEL' }
   | { type: 'DISMISS_DISRUPTION' }
-  | { type: 'VIEW_ALTERNATIVES' };
+  | { type: 'DISMISS_AND_SHOW_ALTERNATIVES' };
+
+export interface ScreenContext {
+  dispatch: (action: StoreAction) => void;
+  navigate: (screen: ScreenId) => void;
+  previousScreen: ScreenId | null;
+}

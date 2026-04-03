@@ -6,16 +6,16 @@ import {
   disruptionAlertScreen,
   tubeBoardScreen,
 } from './screens';
-import type { AppSnapshot, AppAction } from './shared';
+import type { AppSnapshot, AppAction, ScreenContext, StoreAction } from './shared';
 import type { ScreenId } from '../types';
 
-export interface GlassScreenDef {
+interface GlassScreen {
   containers: (snapshot: AppSnapshot) => any[];
   updates: (snapshot: AppSnapshot) => { containerID: number; containerName: string; content: string }[];
-  action: (action: AppAction, nav: any, snapshot: AppSnapshot, ctx: any) => any;
+  action: (action: AppAction, snapshot: AppSnapshot, ctx: ScreenContext) => void;
 }
 
-const screensMap: Record<ScreenId, GlassScreenDef> = {
+const screensMap: Record<ScreenId, GlassScreen> = {
   splash: splashScreen,
   departure_board: departureBoardScreen,
   train_detail: trainDetailScreen,
@@ -24,35 +24,25 @@ const screensMap: Record<ScreenId, GlassScreenDef> = {
   tube_board: tubeBoardScreen,
 };
 
-export interface GlassRouterResult {
-  containers: any[];
-  updates: { containerID: number; containerName: string; content: string }[];
+export function getScreen(id: ScreenId): GlassScreen {
+  return screensMap[id] || screensMap.splash;
 }
 
-export function getScreenDef(screenId: ScreenId): GlassScreenDef {
-  return screensMap[screenId] || screensMap.splash;
+export function getContainers(snapshot: AppSnapshot) {
+  return getScreen(snapshot.screen).containers(snapshot);
 }
 
-export function toDisplayData(snapshot: AppSnapshot): GlassRouterResult {
-  const screen = getScreenDef(snapshot.screen);
-  return {
-    containers: screen.containers(snapshot),
-    updates: screen.updates(snapshot),
-  };
+export function getUpdates(snapshot: AppSnapshot) {
+  return getScreen(snapshot.screen).updates(snapshot);
 }
 
-export function handleGlassAction(
+export function handleAction(
   action: AppAction,
   snapshot: AppSnapshot,
-  dispatch: (action: any) => void,
+  dispatch: (a: StoreAction) => void,
   navigate: (screen: ScreenId) => void,
   previousScreen: ScreenId | null,
 ) {
-  const screen = getScreenDef(snapshot.screen);
-  const ctx = {
-    dispatch,
-    navigate,
-    previousScreen,
-  };
-  screen.action(action, {}, snapshot, ctx);
+  const ctx: ScreenContext = { dispatch, navigate, previousScreen };
+  getScreen(snapshot.screen).action(action, snapshot, ctx);
 }

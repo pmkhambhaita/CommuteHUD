@@ -1,40 +1,35 @@
 import { TextContainerProperty } from '@evenrealities/even_hub_sdk';
 import { DISPLAY_WIDTH, DISPLAY_HEIGHT } from '../../utils/constants';
-import { separator, truncate, wrapText, LINE_WIDTH } from '../../utils/glass-text';
-import type { AppSnapshot, AppAction } from '../shared';
+import { separator, wrapText, rightAlign, LINE_WIDTH } from '../../utils/glass-text';
+import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 
 function renderContent(snapshot: AppSnapshot): string {
   const d = snapshot.disruption;
-  if (!d) return '  No disruption data';
-
-  const lines: string[] = [];
-  lines.push('');
-  lines.push('    ⚠  DISRUPTION ALERT  ⚠');
-  lines.push(separator());
-  lines.push('');
-
-  // Find the related departure info
   const dep = snapshot.activeJourney?.departure;
-  if (dep) {
-    lines.push(`Service: ${dep.scheduledTime} ${truncate(dep.operator, 20)}`);
-  }
+  const lines: string[] = [];
 
+  lines.push('⚠ DISRUPTION DETECTED');
+  lines.push(separator());
   lines.push('');
-  if (d.isCancelled) {
-    lines.push('  Status: CANCELLED');
-  } else {
-    lines.push(`  Delayed: +${d.delayMinutes} minutes`);
+
+  if (dep && d) {
+    if (d.isCancelled) {
+      lines.push(`${dep.scheduledTime} CANCELLED`);
+    } else {
+      lines.push(`${dep.scheduledTime} now: +${d.delayMinutes} min delay`);
+    }
+  } else if (d) {
+    lines.push(`Delay: +${d.delayMinutes} min`);
   }
 
-  if (d.reason) {
-    lines.push('');
-    lines.push(separator());
-    lines.push(wrapText(d.reason, LINE_WIDTH));
+  if (d?.reason) {
+    lines.push(`Reason: ${wrapText(d.reason, LINE_WIDTH - 8)}`);
   }
 
   lines.push('');
   lines.push(separator());
-  lines.push('● View alternatives  ●● Dismiss');
+  lines.push(rightAlign('▶ View alternatives  [●]', ''));
+  lines.push(rightAlign('  Dismiss            [●●]', ''));
 
   return lines.join('\n');
 }
@@ -48,34 +43,28 @@ export const disruptionAlertScreen = {
         width: DISPLAY_WIDTH,
         height: DISPLAY_HEIGHT,
         containerID: 1,
-        containerName: 'disruption',
+        containerName: 'disrupt',
         isEventCapture: 1,
         content: renderContent(snapshot),
-        paddingLength: 4,
+        paddingLength: 8,
       }),
     ];
   },
 
   updates(snapshot: AppSnapshot) {
-    return [
-      { containerID: 1, containerName: 'disruption', content: renderContent(snapshot) },
-    ];
+    return [{ containerID: 1, containerName: 'disrupt', content: renderContent(snapshot) }];
   },
 
-  action(action: AppAction, nav: any, _snapshot: AppSnapshot, ctx: any) {
+  action(action: AppAction, _snapshot: AppSnapshot, ctx: ScreenContext) {
     switch (action.type) {
       case 'SELECT':
-      case 'VIEW_ALTERNATIVES':
-        ctx.dispatch?.({ type: 'DISMISS_DISRUPTION_AND_SHOW_ALTERNATIVES' });
+        ctx.dispatch({ type: 'DISMISS_AND_SHOW_ALTERNATIVES' });
         ctx.navigate('departure_board');
-        return nav;
+        break;
       case 'BACK':
-      case 'DISMISS_DISRUPTION':
-        ctx.dispatch?.({ type: 'DISMISS_DISRUPTION' });
-        ctx.navigate(ctx.previousScreen || 'departure_board');
-        return nav;
-      default:
-        return nav;
+        ctx.dispatch({ type: 'DISMISS_DISRUPTION' });
+        ctx.navigate(ctx.previousScreen || 'journey_active');
+        break;
     }
   },
 };

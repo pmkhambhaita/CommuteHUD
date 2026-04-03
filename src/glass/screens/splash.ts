@@ -1,18 +1,19 @@
 import { TextContainerProperty } from '@evenrealities/even_hub_sdk';
 import { DISPLAY_WIDTH, DISPLAY_HEIGHT } from '../../utils/constants';
-import type { AppSnapshot } from '../shared';
-import type { AppAction } from '../shared';
+import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 
 const SPLASH_CONTENT = [
   '',
   '',
-  '        ╔═══════════════════════╗',
-  '        ║       COMMUTE         ║',
-  '        ║     ━━━━━━━━━━━━      ║',
-  '        ║  Smart Commute HUD    ║',
-  '        ╚═══════════════════════╝',
+  '       ╔══════════════════════════╗',
+  '       ║                          ║',
+  '       ║        C O M M U T E     ║',
+  '       ║        ─────────────     ║',
+  '       ║   Smart Commute HUD      ║',
+  '       ║                          ║',
+  '       ╚══════════════════════════╝',
   '',
-  '         Loading departures...',
+  '        Loading departures...',
 ].join('\n');
 
 export const splashScreen = {
@@ -31,12 +32,14 @@ export const splashScreen = {
     ];
   },
 
-  updates(_snapshot: AppSnapshot) {
-    return [];
+  updates(snapshot: AppSnapshot) {
+    const content = snapshot.error
+      ? SPLASH_CONTENT.replace('Loading departures...', `⚠ ${snapshot.error}`)
+      : SPLASH_CONTENT;
+    return [{ containerID: 1, containerName: 'splash', content }];
   },
 
-  action(_action: AppAction, _nav: any, _snapshot: AppSnapshot, _ctx: any) {
-    // No input handling during splash
-    return _nav;
+  action(_action: AppAction, _snapshot: AppSnapshot, _ctx: ScreenContext) {
+    // No input during splash
   },
 };

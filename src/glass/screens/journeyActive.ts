@@ -1,52 +1,46 @@
 import { TextContainerProperty } from '@evenrealities/even_hub_sdk';
 import { DISPLAY_WIDTH, DISPLAY_HEIGHT } from '../../utils/constants';
-import { formatHeader, separator, truncate, formatTwoColumn, buildProgressBar, LINE_WIDTH } from '../../utils/glass-text';
-import { minutesUntil, formatCountdown, formatSecondsAsMinutes } from '../../utils/time';
-import type { AppSnapshot, AppAction } from '../shared';
+import { rightAlign, separator, truncate, progressBar, LINE_WIDTH } from '../../utils/glass-text';
+import { minutesUntil, formatCountdown } from '../../utils/time';
+import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 
-function renderPhaseA(snapshot: AppSnapshot): string {
-  const j = snapshot.activeJourney!;
+// ── Phase A: At Station ──
+function renderAtStation(s: AppSnapshot): string {
+  const j = s.activeJourney!;
   const dep = j.departure;
   const minsLeft = minutesUntil(j.departureTime);
-  const totalWait = Math.max(1, Math.round((j.departureTime - Date.now() + minsLeft * 60000) / 60000));
-  const fraction = 1 - minsLeft / Math.max(totalWait, 1);
+  const totalWait = Math.max(1, Math.round((j.arrivalTime - j.departureTime) / 60000));
+  const fraction = Math.max(0, 1 - (minsLeft / Math.max(minsLeft + 5, 15)));
 
   const lines: string[] = [];
-  lines.push(formatHeader('AT STATION', `Plat ${dep.platform}`));
-  lines.push(separator());
-  lines.push(`${dep.scheduledTime} to ${truncate(dep.destination, 24)}`);
-  lines.push(`${dep.journeyType} · ${dep.duration} min journey`);
-  lines.push(`Arriving at ${dep.estimatedArrival}`);
+  lines.push(`▶ Board now · Platform ${dep.platform}`);
+  lines.push(`  ${dep.scheduledTime} → KGX`);
   lines.push('');
-  lines.push(`Departing in ${formatCountdown(minsLeft)}`);
-  lines.push(buildProgressBar(fraction, 34, `${minsLeft}m`));
+  lines.push(`  Departs in  ${formatCountdown(minsLeft)}`);
+  lines.push(`  Journey:    ${totalWait} min`);
+  lines.push(`  Arrives:    ${dep.estimatedArrival || '--:--'}`);
   lines.push('');
-
-  if (dep.delayMinutes > 0) {
-    lines.push(`⚠ Delayed +${dep.delayMinutes} min`);
-  } else {
-    lines.push('ON TIME');
-  }
-
+  lines.push(`  ${progressBar(fraction, 30, 'countdown')}`);
   return lines.join('\n');
 }
 
-function renderPhaseB(snapshot: AppSnapshot): string {
-  const j = snapshot.activeJourney!;
+// ── Phase B: On Train ──
+function renderOnTrain(s: AppSnapshot): string {
+  const j = s.activeJourney!;
   const dep = j.departure;
-  const detail = j.serviceDetail;
   const elapsed = Date.now() - j.departureTime;
   const total = j.arrivalTime - j.departureTime;
   const fraction = Math.min(1, elapsed / total);
+  const minsLeft = minutesUntil(j.arrivalTime);
+  const pct = Math.round(fraction * 100);
 
   const lines: string[] = [];
-  lines.push(formatHeader('ON TRAIN', `${Math.round(fraction * 100)}%`));
-  lines.push(separator());
-  lines.push(formatTwoColumn(`Dep ${dep.scheduledTime}`, `Arr ${dep.estimatedArrival}`));
-  lines.push(`→ ${truncate(dep.destination, LINE_WIDTH - 2)}`);
+  lines.push(rightAlign(`On train · KGX in ${minsLeft} min`, ''));
+  lines.push(`Arrives:  ${dep.estimatedArrival || '--:--'}`);
   lines.push('');
 
-  // Next 2 calling points
+  // Next stops from calling points
+  const detail = j.serviceDetail;
   if (detail?.callingPoints) {
     const now = Date.now();
     const upcoming = detail.callingPoints.filter((cp) => {
@@ -56,100 +50,97 @@ function renderPhaseB(snapshot: AppSnapshot): string {
       return cpTime.getTime() > now;
     }).slice(0, 2);
 
-    if (upcoming.length > 0) {
-      lines.push('Next stops:');
-      for (const cp of upcoming) {
-        const time = cp.estimatedTime === 'On time' ? cp.scheduledTime : cp.estimatedTime;
-        let cpLine = formatTwoColumn(`  ${truncate(cp.station, 22)}`, time);
-        if (cp.delayMinutes > 0) cpLine = truncate(cpLine + ` (+${cp.delayMinutes}m)`, LINE_WIDTH);
-        lines.push(cpLine);
-      }
+    for (const cp of upcoming) {
+      const time = cp.estimatedTime || cp.scheduledTime;
+      const delay = cp.delayMinutes > 0 ? ` (+${cp.delayMinutes}m)` : '';
+      lines.push(`Next stop: ${truncate(cp.station, 18)} ${time}${delay}`);
+    }
+    if (upcoming.length === 0) {
+      lines.push('Next stop: approaching destination');
     }
   }
 
   lines.push('');
-  lines.push(buildProgressBar(fraction, 34, `${Math.round(fraction * 100)}%`));
-  lines.push(separator());
-  lines.push('● Tube board    ●● Cancel journey');
-
+  lines.push(`  ${progressBar(fraction, 30, `${pct}% complete`)}`);
   return lines.join('\n');
 }
 
-function renderPhaseC(snapshot: AppSnapshot): string {
-  const j = snapshot.activeJourney!;
-  const dep = j.departure;
+// ── Phase C: Approaching ──
+function renderApproaching(s: AppSnapshot): string {
+  const j = s.activeJourney!;
+  const minsLeft = minutesUntil(j.arrivalTime);
   const elapsed = Date.now() - j.departureTime;
   const total = j.arrivalTime - j.departureTime;
   const fraction = Math.min(1, elapsed / total);
-  const minsToArrival = minutesUntil(j.arrivalTime);
+  const pct = Math.round(fraction * 100);
 
   const lines: string[] = [];
-  lines.push(formatHeader('APPROACHING', `${minsToArrival}m`));
-  lines.push(separator());
-  lines.push(`Arriving ${dep.destination}`);
-  lines.push(`Est. ${dep.estimatedArrival}`);
-  lines.push(separator());
+  lines.push(`★ Arriving KGX in ${minsLeft} min`);
+  lines.push('');
+  lines.push('Tube connection:');
 
-  // Tube connections
-  lines.push('Tube connections:');
-  for (const line of snapshot.tubeLines.slice(0, 3)) {
+  for (const line of s.tubeLines.slice(0, 3)) {
     const nextArr = line.arrivals[0];
-    const timeStr = nextArr
-      ? formatSecondsAsMinutes(nextArr.timeToStation)
-      : '--';
-    lines.push(formatTwoColumn(`  ${truncate(line.lineName, 18)}`, timeStr));
+    if (!nextArr) continue;
+    const dest = truncate(nextArr.destination || '', 12);
+    const mins = nextArr.departureTime || '--:--';
+    lines.push(rightAlign(`  ${truncate(line.lineName, 14)}`, `→ ${dest}  ${mins}`));
+  }
+
+  if (s.tubeLines.length === 0) {
+    lines.push('  Loading tube data...');
   }
 
   lines.push('');
-  lines.push(buildProgressBar(fraction, 34, `${Math.round(fraction * 100)}%`));
-  lines.push('● Tube board    ●● Cancel journey');
-
+  lines.push(`  ${progressBar(fraction, 30, `${pct}% complete`)}`);
   return lines.join('\n');
 }
 
-function renderPhaseD(snapshot: AppSnapshot): string {
+// ── Phase D: Transfer ──
+function renderTransfer(s: AppSnapshot): string {
   const lines: string[] = [];
-  lines.push(formatHeader("At King's Cross", ''));
+  lines.push("At King's Cross");
   lines.push(separator());
 
-  for (const line of snapshot.tubeLines) {
-    lines.push(`${truncate(line.lineName, 12)}:`);
-    const arrivals = line.arrivals.slice(0, 3);
+  for (const line of s.tubeLines.slice(0, 4)) {
+    const arrivals = line.arrivals.slice(0, 2);
     for (let i = 0; i < arrivals.length; i++) {
       const a = arrivals[i];
-      const marker = i === 0 ? '●' : '○';
-      const timeStr = formatSecondsAsMinutes(a.timeToStation);
-      const platStr = a.platformName ? ` (${truncate(a.platformName, 10)})` : '';
-      lines.push(`  ${marker} ${timeStr}${platStr}`);
+      const marker = i === 0 ? '▶' : ' ';
+      const platStr = a.platform ? `platform ${a.platform}` : '';
+      const timeStr = a.departureTime || '--:--';
+      const label = i === 0
+        ? `${marker} ${truncate(line.lineName, 14)}  ${platStr}`
+        : `  next:          ${platStr}`;
+      lines.push(rightAlign(label, timeStr));
+    }
+    if (arrivals.length === 0) {
+      lines.push(`▶ ${truncate(line.lineName, 14)}  --`);
     }
   }
 
-  lines.push(separator());
-  lines.push('● Tube board    ●● Cancel journey');
-
   return lines.join('\n');
 }
 
-function renderContent(snapshot: AppSnapshot): string {
-  const j = snapshot.activeJourney;
+function renderContent(s: AppSnapshot): string {
+  const j = s.activeJourney;
   if (!j) return 'No active journey';
 
+  let content: string;
+  switch (j.phase) {
+    case 'at_station': content = renderAtStation(s); break;
+    case 'on_train': content = renderOnTrain(s); break;
+    case 'approaching': content = renderApproaching(s); break;
+    case 'transfer': content = renderTransfer(s); break;
+    default: content = renderAtStation(s);
+  }
+
   if (j.cancelConfirmPending) {
-    const base = renderForPhase(snapshot);
-    return base + '\n' + separator() + '\nCancel journey? ▶ Yes  No';
+    content += '\n' + separator();
+    content += '\nCancel journey? ▶ Yes  No';
   }
 
-  return renderForPhase(snapshot);
-}
-
-function renderForPhase(snapshot: AppSnapshot): string {
-  switch (snapshot.activeJourney!.phase) {
-    case 'at_station': return renderPhaseA(snapshot);
-    case 'on_train': return renderPhaseB(snapshot);
-    case 'approaching': return renderPhaseC(snapshot);
-    case 'transfer': return renderPhaseD(snapshot);
-    default: return renderPhaseA(snapshot);
-  }
+  return content;
 }
 
 export const journeyActiveScreen = {
@@ -164,44 +155,35 @@ export const journeyActiveScreen = {
         containerName: 'journey',
         isEventCapture: 1,
         content: renderContent(snapshot),
-        paddingLength: 2,
+        paddingLength: 4,
       }),
     ];
   },
 
   updates(snapshot: AppSnapshot) {
-    return [
-      { containerID: 1, containerName: 'journey', content: renderContent(snapshot) },
-    ];
+    return [{ containerID: 1, containerName: 'journey', content: renderContent(snapshot) }];
   },
 
-  action(action: AppAction, nav: any, snapshot: AppSnapshot, ctx: any) {
+  action(action: AppAction, snapshot: AppSnapshot, ctx: ScreenContext) {
     const j = snapshot.activeJourney;
-    if (!j) return nav;
+    if (!j) return;
 
     switch (action.type) {
       case 'SELECT':
-        if (j.cancelConfirmPending) {
-          // Second double-press logic handled via BACK for confirm
-          return nav;
-        }
+        if (j.cancelConfirmPending) return; // Use BACK to confirm
         // Single press → tube board in phases B, C, D
         if (j.phase !== 'at_station') {
           ctx.navigate('tube_board');
         }
-        return nav;
-
+        break;
       case 'BACK':
         if (j.cancelConfirmPending) {
-          ctx.dispatch?.({ type: 'CONFIRM_CANCEL' });
+          ctx.dispatch({ type: 'CONFIRM_CANCEL' });
           ctx.navigate('departure_board');
         } else {
-          ctx.dispatch?.({ type: 'TOGGLE_CANCEL_CONFIRM' });
+          ctx.dispatch({ type: 'TOGGLE_CANCEL_CONFIRM' });
         }
-        return nav;
-
-      default:
-        return nav;
+        break;
     }
   },
 };

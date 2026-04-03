@@ -11,32 +11,21 @@ import type {
 import { APPROACHING_MINUTES, TRANSFER_TIMEOUT_MINUTES } from '../utils/constants';
 
 interface JourneyState {
-  // Screen navigation
   screen: ScreenId;
   previousScreen: ScreenId | null;
-
-  // Departure board
   departures: Departure[];
   highlightedIndex: number;
   lastRefresh: string | null;
   isLoading: boolean;
-
-  // Selected departure / detail
+  error: string | null;
   selectedDeparture: Departure | null;
   serviceDetail: ServiceDetail | null;
   detailScrollPos: number;
-
-  // Active journey
   activeJourney: ActiveJourney | null;
-
-  // Tube
   tubeLines: TubeLineArrivals[];
   tubeLastRefresh: string | null;
-
-  // Foreground state
   isForeground: boolean;
 
-  // Actions
   setScreen: (screen: ScreenId) => void;
   setDepartures: (deps: Departure[], generatedAt: string) => void;
   setHighlightedIndex: (i: number) => void;
@@ -52,6 +41,7 @@ interface JourneyState {
   setTubeLines: (lines: TubeLineArrivals[], generatedAt: string) => void;
   setForeground: (fg: boolean) => void;
   setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
   updateActiveServiceDetail: (detail: ServiceDetail) => void;
 }
 
@@ -64,6 +54,7 @@ export const useJourneyStore = create<JourneyState>()(
       highlightedIndex: 0,
       lastRefresh: null,
       isLoading: true,
+      error: null,
       selectedDeparture: null,
       serviceDetail: null,
       detailScrollPos: 0,
@@ -80,7 +71,7 @@ export const useJourneyStore = create<JourneyState>()(
           departures,
           lastRefresh: generatedAt,
           isLoading: false,
-          // Auto-advance from splash
+          error: null,
           screen: state.screen === 'splash' ? 'departure_board' : state.screen,
         });
       },
@@ -90,10 +81,9 @@ export const useJourneyStore = create<JourneyState>()(
       moveHighlight: (direction) =>
         set((state) => {
           const max = Math.max(0, state.departures.length - 1);
-          const newIdx =
-            direction === 'up'
-              ? Math.max(0, state.highlightedIndex - 1)
-              : Math.min(max, state.highlightedIndex + 1);
+          const newIdx = direction === 'up'
+            ? Math.max(0, state.highlightedIndex - 1)
+            : Math.min(max, state.highlightedIndex + 1);
           return { highlightedIndex: newIdx };
         }),
 
@@ -106,21 +96,19 @@ export const useJourneyStore = create<JourneyState>()(
         }),
 
       setServiceDetail: (detail) => set({ serviceDetail: detail }),
-
       setDetailScrollPos: (detailScrollPos) => set({ detailScrollPos }),
 
       scrollDetail: (direction, maxScroll) =>
         set((state) => ({
-          detailScrollPos:
-            direction === 'up'
-              ? Math.max(0, state.detailScrollPos - 1)
-              : Math.min(maxScroll, state.detailScrollPos + 1),
+          detailScrollPos: direction === 'up'
+            ? Math.max(0, state.detailScrollPos - 1)
+            : Math.min(maxScroll, state.detailScrollPos + 1),
         })),
 
       startJourney: (dep, detail, departureTime, arrivalTime) =>
         set({
           activeJourney: {
-            serviceId: dep.serviceId,
+            tripId: dep.tripId,
             departure: dep,
             serviceDetail: detail,
             departureTime,
@@ -147,15 +135,9 @@ export const useJourneyStore = create<JourneyState>()(
           } else if (now < j.arrivalTime + TRANSFER_TIMEOUT_MINUTES * 60000) {
             phase = 'transfer';
           } else {
-            // Journey expired
-            return {
-              activeJourney: null,
-              screen: 'departure_board',
-            };
+            return { activeJourney: null, screen: 'departure_board' };
           }
-          return {
-            activeJourney: { ...j, phase },
-          };
+          return { activeJourney: { ...j, phase } };
         }),
 
       setCancelConfirm: (pending) =>
@@ -165,18 +147,14 @@ export const useJourneyStore = create<JourneyState>()(
             : null,
         })),
 
-      cancelJourney: () =>
-        set({
-          activeJourney: null,
-          screen: 'departure_board',
-        }),
+      cancelJourney: () => set({ activeJourney: null, screen: 'departure_board' }),
 
       setTubeLines: (lines, generatedAt) =>
         set({ tubeLines: lines, tubeLastRefresh: generatedAt }),
 
       setForeground: (isForeground) => set({ isForeground }),
-
       setLoading: (isLoading) => set({ isLoading }),
+      setError: (error) => set({ error, isLoading: false }),
 
       updateActiveServiceDetail: (detail) =>
         set((state) => ({

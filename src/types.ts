@@ -1,17 +1,110 @@
 // ── Shared types used across all layers ──
 
+// ── Transitous/MOTIS response types ──
+
+export interface TransitousPlace {
+  name: string;
+  lat: number;
+  lon: number;
+  level: number;
+  stopId?: string;
+  arrival?: string;
+  departure?: string;
+  scheduledArrival?: string;
+  scheduledDeparture?: string;
+  scheduledTrack?: string;
+  track?: string;
+  cancelled?: boolean;
+  alerts?: TransitousAlert[];
+}
+
+export interface TransitousAlert {
+  headerText: string;
+  descriptionText: string;
+  cause?: string;
+  effect?: string;
+  severityLevel?: string;
+}
+
+export interface TransitousStopTime {
+  place: TransitousPlace;
+  mode: string;
+  realTime: boolean;
+  headsign: string;
+  agencyName: string;
+  tripId: string;
+  routeShortName: string;
+  routeLongName: string;
+  displayName: string;
+  cancelled: boolean;
+  tripCancelled: boolean;
+  routeColor?: string;
+  routeTextColor?: string;
+}
+
+export interface TransitousLeg {
+  from: TransitousPlace;
+  to: TransitousPlace;
+  mode: string;
+  departure: string;
+  arrival: string;
+  scheduledDeparture?: string;
+  scheduledArrival?: string;
+  realTime: boolean;
+  distance: number;
+  duration: number; // seconds
+  headsign?: string;
+  tripId?: string;
+  agencyName?: string;
+  routeShortName?: string;
+  routeLongName?: string;
+  routeColor?: string;
+  displayName?: string;
+  intermediateStops?: TransitousIntermediateStop[];
+  track?: string;
+  scheduledTrack?: string;
+}
+
+export interface TransitousIntermediateStop {
+  place?: TransitousPlace;
+  name?: string;
+  stopId?: string;
+  arrival?: string;
+  departure?: string;
+  scheduledArrival?: string;
+  scheduledDeparture?: string;
+  track?: string;
+  scheduledTrack?: string;
+  cancelled?: boolean;
+  realTime?: boolean;
+}
+
+export interface TransitousItinerary {
+  startTime: string;
+  endTime: string;
+  duration: number; // seconds
+  legs: TransitousLeg[];
+  transfers: number;
+  alerts?: TransitousAlert[];
+}
+
+// ── App-level types ──
+
 export interface Departure {
-  serviceId: string;
+  tripId: string;
   scheduledTime: string; // HH:MM
-  estimatedTime: string; // HH:MM or "On time" or "Cancelled" or "Delayed"
+  estimatedTime: string; // HH:MM or same as scheduled
   platform: string;
   operator: string;
   destination: string;
+  headsign: string;
   isCancelled: boolean;
   delayMinutes: number;
-  journeyType: 'Fast' | 'Stops';
+  routeName: string;
   duration: number; // minutes
   estimatedArrival: string; // HH:MM
+  mode: string;
+  intermediateStopCount: number;
 }
 
 export interface CallingPoint {
@@ -20,11 +113,14 @@ export interface CallingPoint {
   estimatedTime: string;
   delayMinutes: number;
   isCancelled: boolean;
+  platform: string;
 }
 
 export interface ServiceDetail {
-  serviceId: string;
+  tripId: string;
   operator: string;
+  routeName: string;
+  headsign: string;
   scheduledDeparture: string;
   estimatedDeparture: string;
   scheduledArrival: string;
@@ -33,40 +129,24 @@ export interface ServiceDetail {
   isCancelled: boolean;
   delayMinutes: number;
   disruptionReason: string | null;
-  coachCount: number | null;
   callingPoints: CallingPoint[];
-  route: string;
+  mode: string;
 }
 
 export interface TubeArrival {
   lineId: string;
   lineName: string;
-  destinationName: string;
-  platformName: string;
-  timeToStation: number; // seconds
-  currentLocation: string;
+  destination: string;
+  platform: string;
+  departureTime: string;
+  delayMinutes: number;
+  mode: string;
 }
 
 export interface TubeLineArrivals {
   lineId: string;
   lineName: string;
   arrivals: TubeArrival[];
-}
-
-export interface DeparturesResponse {
-  departures: Departure[];
-  generatedAt: string;
-  station: string;
-}
-
-export interface ServiceResponse {
-  service: ServiceDetail;
-}
-
-export interface TubeResponse {
-  lines: TubeLineArrivals[];
-  generatedAt: string;
-  station: string;
 }
 
 // ── Journey state machine ──
@@ -76,7 +156,7 @@ export type JourneyPhase = 'idle' | 'at_station' | 'on_train' | 'approaching' | 
 export type ScreenId = 'splash' | 'departure_board' | 'train_detail' | 'journey_active' | 'disruption_alert' | 'tube_board';
 
 export interface ActiveJourney {
-  serviceId: string;
+  tripId: string;
   departure: Departure;
   serviceDetail: ServiceDetail | null;
   departureTime: number; // epoch ms
@@ -86,7 +166,7 @@ export interface ActiveJourney {
 }
 
 export interface DisruptionInfo {
-  serviceId: string;
+  tripId: string;
   delayMinutes: number;
   isCancelled: boolean;
   reason: string | null;
@@ -97,26 +177,24 @@ export interface DisruptionInfo {
 
 export interface UserSettings {
   origin: string;
-  originCrs: string;
+  originStopId: string;
   destination: string;
-  destinationCrs: string;
+  destinationStopId: string;
+  tubeStationStopId: string;
   tubeLines: string[];
-  tubeStationNaptan: string;
   disruptionThreshold: number; // minutes
-  pollingIntervalDepartures: number; // ms
-  pollingIntervalService: number; // ms
-  pollingIntervalTube: number; // ms
 }
 
+// Stevenage and KGX stop IDs for Transitous (GTFS-based)
 export const DEFAULT_SETTINGS: UserSettings = {
   origin: 'Stevenage',
-  originCrs: 'SVG',
-  destination: 'London Kings Cross',
-  destinationCrs: 'KGX',
-  tubeLines: ['northern', 'piccadilly', 'victoria', 'metropolitan', 'hammersmith-city', 'circle'],
-  tubeStationNaptan: '940GZZLUKSX',
+  originStopId: 'gb:atoc:SVG', // Will be resolved via geocoding
+  destination: "London King's Cross",
+  destinationStopId: 'gb:atoc:KGX',
+  tubeStationStopId: 'gb:tfl:940GZZLUKSX',
+  tubeLines: ['victoria', 'piccadilly', 'northern', 'metropolitan', 'hammersmith-city', 'circle'],
   disruptionThreshold: 3,
-  pollingIntervalDepartures: 30000,
-  pollingIntervalService: 180000,
-  pollingIntervalTube: 15000,
 };
+
+// ── API base ──
+export const TRANSITOUS_BASE = 'https://api.transitous.org';

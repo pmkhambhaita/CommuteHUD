@@ -1,81 +1,67 @@
 import { TextContainerProperty } from '@evenrealities/even_hub_sdk';
-import {
-  DISPLAY_WIDTH,
-  DISPLAY_HEIGHT,
-  HEADER_HEIGHT,
-  BODY_Y,
-  ACTION_BAR_HEIGHT,
-} from '../../utils/constants';
-import { formatHeader, separator, truncate, formatTwoColumn, wrapText, LINE_WIDTH } from '../../utils/glass-text';
-import type { AppSnapshot, AppAction } from '../shared';
+import { DISPLAY_WIDTH, DISPLAY_HEIGHT, MAX_VISIBLE_STOPS } from '../../utils/constants';
+import { rightAlign, separator, truncate, wrapText, LINE_WIDTH } from '../../utils/glass-text';
+import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 
-const VISIBLE_STOPS = 4;
-const BODY_HEIGHT = DISPLAY_HEIGHT - HEADER_HEIGHT - ACTION_BAR_HEIGHT;
-
-function renderHeader(snapshot: AppSnapshot): string {
+function renderContent(snapshot: AppSnapshot): string {
   const dep = snapshot.selectedDeparture;
-  if (!dep) return 'No service selected';
-  return formatHeader(`${dep.scheduledTime} to ${truncate(dep.destination, 20)}`, `Plat ${dep.platform}`);
-}
-
-function renderBody(snapshot: AppSnapshot): string {
   const detail = snapshot.serviceDetail;
-  const dep = snapshot.selectedDeparture;
-  if (!detail) return '\n  Loading service details...';
-
   const lines: string[] = [];
-  lines.push(`${truncate(detail.operator, LINE_WIDTH)}`);
-  lines.push(`Route: ${truncate(detail.route, LINE_WIDTH - 7)}`);
+
+  if (!dep) {
+    lines.push('No service selected');
+    return lines.join('\n');
+  }
+
+  // Header
+  const typeStr = dep.routeName || 'Service';
+  lines.push(`${dep.scheduledTime} ${typeStr} · Platform ${dep.platform}`);
+  lines.push(`${truncate(dep.operator, LINE_WIDTH)}`);
   lines.push(separator());
 
-  // Times
-  const depTime = detail.estimatedDeparture === 'On time'
-    ? detail.scheduledDeparture
-    : detail.estimatedDeparture;
-  const arrTime = detail.estimatedArrival === 'On time'
-    ? detail.scheduledArrival
-    : detail.estimatedArrival;
-
-  lines.push(formatTwoColumn(`Dep: ${depTime}`, `Arr: ${arrTime}`));
-
-  // Duration and coaches
-  let infoLine = '';
-  if (dep) infoLine += `${dep.duration} min journey`;
-  if (detail.coachCount) infoLine += ` · ${detail.coachCount} coaches`;
-  lines.push(truncate(infoLine, LINE_WIDTH));
-  lines.push(separator());
-
-  // Calling points with scroll
-  const cps = detail.callingPoints;
-  const scrollPos = snapshot.detailScrollPos;
-  const visibleCps = cps.slice(scrollPos, scrollPos + VISIBLE_STOPS);
-
-  lines.push('Calling points:');
-  for (const cp of visibleCps) {
-    const timeStr = cp.estimatedTime === 'On time' ? cp.scheduledTime : cp.estimatedTime;
-    let cpLine = formatTwoColumn(`  ${truncate(cp.station, 24)}`, timeStr);
-    if (cp.delayMinutes > 0) cpLine += ` (+${cp.delayMinutes}m)`;
-    lines.push(truncate(cpLine, LINE_WIDTH));
-  }
-
-  if (scrollPos + VISIBLE_STOPS < cps.length) {
-    lines.push(`  ▼ ${cps.length - scrollPos - VISIBLE_STOPS} more stops`);
-  }
-  if (scrollPos > 0) {
-    lines.splice(lines.length - visibleCps.length - 1, 0, `  ▲ ${scrollPos} stops above`);
-  }
-
-  // Disruption reason
-  if (detail.disruptionReason) {
+  if (!detail) {
+    lines.push('');
+    lines.push('  Loading service details...');
+    lines.push('');
     lines.push(separator());
-    lines.push(wrapText(`⚠ ${detail.disruptionReason}`, LINE_WIDTH));
+    lines.push(rightAlign('● Set as journey', '↑ Back'));
+    return lines.join('\n');
   }
+
+  // Arrival info
+  const arrTime = detail.estimatedArrival || detail.scheduledArrival;
+  const delayStr = detail.delayMinutes > 0
+    ? ` (+${detail.delayMinutes}m)`
+    : ' (on time)';
+  lines.push(`Arrives KGX:  ${arrTime}${delayStr}`);
+  lines.push('');
+
+  // Disruption
+  if (detail.disruptionReason) {
+    lines.push(`⚠ ${wrapText(detail.disruptionReason, LINE_WIDTH - 2)}`);
+  } else {
+    lines.push('⚠ Disruption: None');
+  }
+
+  // Calling points (scrollable)
+  if (detail.callingPoints.length > 0) {
+    lines.push(separator());
+    const scroll = snapshot.detailScrollPos;
+    const visible = detail.callingPoints.slice(scroll, scroll + MAX_VISIBLE_STOPS);
+    for (const cp of visible) {
+      const time = cp.estimatedTime || cp.scheduledTime;
+      const delayInfo = cp.delayMinutes > 0 ? ` (+${cp.delayMinutes}m)` : '';
+      lines.push(rightAlign(`  ${truncate(cp.station, 22)}`, `${time}${delayInfo}`));
+    }
+    if (scroll + MAX_VISIBLE_STOPS < detail.callingPoints.length) {
+      lines.push(`  ▼ ${detail.callingPoints.length - scroll - MAX_VISIBLE_STOPS} more`);
+    }
+  }
+
+  lines.push(separator());
+  lines.push(rightAlign('▶ Set as journey → [●]', '← Back [↑]'));
 
   return lines.join('\n');
-}
-
-function renderActionBar(): string {
-  return '↑↓ Scroll   ● Confirm   ●● Back';
 }
 
 export const trainDetailScreen = {
@@ -85,67 +71,40 @@ export const trainDetailScreen = {
         xPosition: 0,
         yPosition: 0,
         width: DISPLAY_WIDTH,
-        height: HEADER_HEIGHT,
+        height: DISPLAY_HEIGHT,
         containerID: 1,
-        containerName: 'tdHeader',
-        isEventCapture: 0,
-        content: renderHeader(snapshot),
-        paddingLength: 2,
-      }),
-      new TextContainerProperty({
-        xPosition: 0,
-        yPosition: BODY_Y,
-        width: DISPLAY_WIDTH,
-        height: BODY_HEIGHT,
-        containerID: 2,
-        containerName: 'tdBody',
+        containerName: 'trainDet',
         isEventCapture: 1,
-        content: renderBody(snapshot),
-        paddingLength: 2,
-      }),
-      new TextContainerProperty({
-        xPosition: 0,
-        yPosition: DISPLAY_HEIGHT - ACTION_BAR_HEIGHT,
-        width: DISPLAY_WIDTH,
-        height: ACTION_BAR_HEIGHT,
-        containerID: 3,
-        containerName: 'tdAction',
-        isEventCapture: 0,
-        content: renderActionBar(),
-        paddingLength: 2,
+        content: renderContent(snapshot),
+        paddingLength: 4,
       }),
     ];
   },
 
   updates(snapshot: AppSnapshot) {
-    return [
-      { containerID: 1, containerName: 'tdHeader', content: renderHeader(snapshot) },
-      { containerID: 2, containerName: 'tdBody', content: renderBody(snapshot) },
-    ];
+    return [{ containerID: 1, containerName: 'trainDet', content: renderContent(snapshot) }];
   },
 
-  action(action: AppAction, nav: any, snapshot: AppSnapshot, ctx: any) {
+  action(action: AppAction, snapshot: AppSnapshot, ctx: ScreenContext) {
     switch (action.type) {
       case 'SCROLL_DOWN':
-        ctx.dispatch?.({ type: 'SCROLL_DETAIL', direction: 'down' });
-        return nav;
+        ctx.dispatch({ type: 'SCROLL_DETAIL', direction: 'down' });
+        break;
       case 'SCROLL_UP': {
         if (snapshot.detailScrollPos === 0) {
           ctx.navigate('departure_board');
         } else {
-          ctx.dispatch?.({ type: 'SCROLL_DETAIL', direction: 'up' });
+          ctx.dispatch({ type: 'SCROLL_DETAIL', direction: 'up' });
         }
-        return nav;
+        break;
       }
       case 'SELECT':
-        ctx.dispatch?.({ type: 'START_JOURNEY' });
+        ctx.dispatch({ type: 'START_JOURNEY' });
         ctx.navigate('journey_active');
-        return nav;
+        break;
       case 'BACK':
         ctx.navigate('departure_board');
-        return nav;
-      default:
-        return nav;
+        break;
     }
   },
 };

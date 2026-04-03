@@ -1,33 +1,35 @@
 import { TextContainerProperty } from '@evenrealities/even_hub_sdk';
 import { DISPLAY_WIDTH, DISPLAY_HEIGHT } from '../../utils/constants';
-import { formatHeader, separator, truncate, padRight, LINE_WIDTH } from '../../utils/glass-text';
-import { formatSecondsAsMinutes, timeSinceString } from '../../utils/time';
-import type { AppSnapshot, AppAction } from '../shared';
+import { rightAlign, separator, truncate, pad, LINE_WIDTH } from '../../utils/glass-text';
+import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 
 function renderContent(snapshot: AppSnapshot): string {
   const lines: string[] = [];
-  const refreshStr = snapshot.tubeLastRefresh ? timeSinceString(snapshot.tubeLastRefresh) : '...';
-  lines.push(formatHeader('TUBE BOARD', refreshStr));
+
+  const refreshStr = snapshot.tubeLastRefresh
+    ? new Date(snapshot.tubeLastRefresh).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : '...';
+  lines.push(rightAlign('TUBE BOARD', `[${refreshStr}]`));
   lines.push(separator());
 
   if (snapshot.tubeLines.length === 0) {
     lines.push('');
     lines.push('  Loading tube arrivals...');
     lines.push('');
-    lines.push('  ● Refresh    ●● Back');
-    return lines.join('\n');
+  } else {
+    for (const line of snapshot.tubeLines.slice(0, 5)) {
+      const name = pad(truncate(line.lineName, 13), 13);
+      const times = line.arrivals
+        .slice(0, 3)
+        .map((a) => a.departureTime || '--')
+        .join(' · ');
+      lines.push(`${name} ${times}`);
+    }
   }
 
-  for (const line of snapshot.tubeLines) {
-    const namePadded = padRight(truncate(line.lineName, 12), 12);
-    const arrivals = line.arrivals.slice(0, 3);
-    const timeParts = arrivals.map((a) => formatSecondsAsMinutes(a.timeToStation));
-    const timeStr = timeParts.join(' · ');
-    lines.push(`${namePadded} ${timeStr}`);
-  }
-
-  lines.push(separator());
-  lines.push('● Refresh    ●● Back');
+  // Pad and action bar
+  while (lines.length < 9) lines.push('');
+  lines.push(rightAlign('● Refresh', '●● Back'));
 
   return lines.join('\n');
 }
@@ -41,30 +43,26 @@ export const tubeBoardScreen = {
         width: DISPLAY_WIDTH,
         height: DISPLAY_HEIGHT,
         containerID: 1,
-        containerName: 'tube',
+        containerName: 'tubeBoard',
         isEventCapture: 1,
         content: renderContent(snapshot),
-        paddingLength: 2,
+        paddingLength: 4,
       }),
     ];
   },
 
   updates(snapshot: AppSnapshot) {
-    return [
-      { containerID: 1, containerName: 'tube', content: renderContent(snapshot) },
-    ];
+    return [{ containerID: 1, containerName: 'tubeBoard', content: renderContent(snapshot) }];
   },
 
-  action(action: AppAction, nav: any, _snapshot: AppSnapshot, ctx: any) {
+  action(action: AppAction, _snapshot: AppSnapshot, ctx: ScreenContext) {
     switch (action.type) {
       case 'SELECT':
-        ctx.dispatch?.({ type: 'FORCE_REFRESH_TUBE' });
-        return nav;
+        ctx.dispatch({ type: 'FORCE_REFRESH_TUBE' });
+        break;
       case 'BACK':
         ctx.navigate('journey_active');
-        return nav;
-      default:
-        return nav;
+        break;
     }
   },
 };

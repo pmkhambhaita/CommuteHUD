@@ -10,8 +10,8 @@ import {
 import { useJourneyStore } from '../store/useJourneyStore';
 import { useSettingsStore } from '../store/useSettingsStore';
 import { useDisruptionStore } from '../store/useDisruptionStore';
-import { toDisplayData, handleGlassAction } from './glassRouter';
-import type { AppSnapshot, AppAction } from './shared';
+import { getContainers, getUpdates, handleAction } from './glassRouter';
+import type { AppSnapshot, AppAction, StoreAction } from './shared';
 import type { ScreenId } from '../types';
 import { fetchDepartures } from '../api/departures';
 import { fetchServiceDetail } from '../api/service';
@@ -26,6 +26,7 @@ import {
   POLL_BACKGROUND,
 } from '../utils/constants';
 
+// ── Build snapshot from stores ──
 function buildSnapshot(): AppSnapshot {
   const j = useJourneyStore.getState();
   const s = useSettingsStore.getState();
@@ -43,10 +44,10 @@ function buildSnapshot(): AppSnapshot {
     tubeLines: j.tubeLines,
     tubeLastRefresh: j.tubeLastRefresh,
     disruption: d.disruption,
-    routeLabel: `${s.origin} → ${s.destination}`,
-    tubeLineIds: s.tubeLines,
+    routeLabel: `${s.origin} → KGX`,
     isLoading: j.isLoading,
     isForeground: j.isForeground,
+    error: j.error,
   };
 }
 
@@ -54,29 +55,38 @@ export default function AppGlasses() {
   const bridgeRef = useRef<EvenAppBridge | null>(null);
   const currentScreenRef = useRef<ScreenId>('splash');
   const intervalsRef = useRef<number[]>([]);
-  const isInitRef = useRef(false);
+  const initRef = useRef(false);
 
+  // ── Interval management ──
   const clearIntervals = useCallback(() => {
     intervalsRef.current.forEach(clearInterval);
     intervalsRef.current = [];
   }, []);
 
+  const addInterval = useCallback((fn: () => void, ms: number) => {
+    intervalsRef.current.push(window.setInterval(fn, ms));
+  }, []);
+
+  // ── API fetchers ──
   const refreshDepartures = useCallback(async () => {
     const s = useSettingsStore.getState();
     const j = useJourneyStore.getState();
     const d = useDisruptionStore.getState();
     try {
-      const data = await fetchDepartures(s.originCrs, s.destinationCrs);
+      const data = await fetchDepartures(s.originStopId, s.destination);
       j.setDepartures(data.departures, data.generatedAt);
 
-      // Check disruptions on active journey
+      // Disruption check on active journey
       if (j.activeJourney) {
         const activeDep = data.departures.find(
-          (dep) => dep.serviceId === j.activeJourney!.serviceId,
+          (dep) => dep.tripId === j.activeJourney!.tripId,
         );
-        if (activeDep && d.shouldAlert(activeDep.serviceId, activeDep.delayMinutes, activeDep.isCancelled, s.disruptionThreshold)) {
+        if (activeDep && d.shouldAlert(
+          activeDep.tripId, activeDep.delayMinutes,
+          activeDep.isCancelled, s.disruptionThreshold,
+        )) {
           d.setDisruption({
-            serviceId: activeDep.serviceId,
+            tripId: activeDep.tripId,
             delayMinutes: activeDep.delayMinutes,
             isCancelled: activeDep.isCancelled,
             reason: null,
@@ -85,46 +95,42 @@ export default function AppGlasses() {
           useJourneyStore.getState().setScreen('disruption_alert');
         }
       }
-    } catch (err) {
-      console.error('Failed to fetch departures:', err);
+    } catch (err: any) {
+      console.error('Departures fetch failed:', err);
+      j.setError(`No connection · ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`);
     }
   }, []);
 
   const refreshService = useCallback(async () => {
     const j = useJourneyStore.getState();
-    const serviceId = j.selectedDeparture?.serviceId || j.activeJourney?.serviceId;
-    if (!serviceId) return;
+    const tripId = j.selectedDeparture?.tripId || j.activeJourney?.tripId;
+    if (!tripId) return;
     try {
-      const data = await fetchServiceDetail(serviceId);
-      if (j.screen === 'train_detail') {
-        j.setServiceDetail(data.service);
-      }
-      if (j.activeJourney) {
-        j.updateActiveServiceDetail(data.service);
-      }
+      const data = await fetchServiceDetail(tripId);
+      if (j.screen === 'train_detail') j.setServiceDetail(data.service);
+      if (j.activeJourney) j.updateActiveServiceDetail(data.service);
     } catch (err) {
-      console.error('Failed to fetch service:', err);
+      console.error('Service fetch failed:', err);
     }
   }, []);
 
   const refreshTube = useCallback(async () => {
     const s = useSettingsStore.getState();
     try {
-      const data = await fetchTubeArrivals(s.tubeStationNaptan, s.tubeLines);
+      const data = await fetchTubeArrivals(s.tubeStationStopId, s.tubeLines);
       useJourneyStore.getState().setTubeLines(data.lines, data.generatedAt);
     } catch (err) {
-      console.error('Failed to fetch tube:', err);
+      console.error('Tube fetch failed:', err);
     }
   }, []);
 
+  // ── Polling setup based on current state ──
   const setupPolling = useCallback(() => {
     clearIntervals();
     const j = useJourneyStore.getState();
-    const isFg = j.isForeground;
 
-    if (!isFg) {
-      // Background: minimal polling
-      intervalsRef.current.push(window.setInterval(refreshDepartures, POLL_BACKGROUND));
+    if (!j.isForeground) {
+      addInterval(refreshDepartures, POLL_BACKGROUND);
       return;
     }
 
@@ -132,55 +138,51 @@ export default function AppGlasses() {
 
     switch (j.screen) {
       case 'departure_board':
-        intervalsRef.current.push(window.setInterval(refreshDepartures, POLL_DEPARTURES));
+        addInterval(refreshDepartures, POLL_DEPARTURES);
         break;
       case 'train_detail':
-        intervalsRef.current.push(window.setInterval(refreshDepartures, POLL_DEPARTURES));
-        intervalsRef.current.push(window.setInterval(refreshService, POLL_SERVICE));
+        addInterval(refreshDepartures, POLL_DEPARTURES);
+        addInterval(refreshService, POLL_SERVICE);
         break;
       case 'journey_active':
         if (phase === 'at_station') {
-          intervalsRef.current.push(window.setInterval(refreshDepartures, POLL_DEPARTURES_ACTIVE));
-          intervalsRef.current.push(window.setInterval(() => {
-            useJourneyStore.getState().updateJourneyPhase();
-          }, 30000));
+          addInterval(refreshDepartures, POLL_DEPARTURES_ACTIVE);
+          addInterval(() => useJourneyStore.getState().updateJourneyPhase(), 30000);
         } else if (phase === 'on_train') {
-          intervalsRef.current.push(window.setInterval(refreshService, POLL_SERVICE));
-          intervalsRef.current.push(window.setInterval(() => {
-            useJourneyStore.getState().updateJourneyPhase();
-          }, 60000));
+          addInterval(refreshService, POLL_SERVICE);
+          addInterval(() => useJourneyStore.getState().updateJourneyPhase(), 60000);
         } else if (phase === 'approaching') {
-          intervalsRef.current.push(window.setInterval(refreshTube, POLL_TUBE_APPROACHING));
-          intervalsRef.current.push(window.setInterval(() => {
-            useJourneyStore.getState().updateJourneyPhase();
-          }, 20000));
+          addInterval(refreshTube, POLL_TUBE_APPROACHING);
+          addInterval(() => useJourneyStore.getState().updateJourneyPhase(), 20000);
         } else if (phase === 'transfer') {
-          intervalsRef.current.push(window.setInterval(refreshTube, POLL_TUBE));
-          intervalsRef.current.push(window.setInterval(() => {
-            useJourneyStore.getState().updateJourneyPhase();
-          }, 15000));
+          addInterval(refreshTube, POLL_TUBE);
+          addInterval(() => useJourneyStore.getState().updateJourneyPhase(), 15000);
         }
         break;
       case 'tube_board':
-        intervalsRef.current.push(window.setInterval(refreshTube, POLL_TUBE));
+        addInterval(refreshTube, POLL_TUBE);
         break;
     }
-  }, [clearIntervals, refreshDepartures, refreshService, refreshTube]);
+  }, [clearIntervals, addInterval, refreshDepartures, refreshService, refreshTube]);
 
-  const updateGlassDisplay = useCallback(async (forceRebuild: boolean = false) => {
+  // ── Display updates ──
+  const updateDisplay = useCallback(async (forceRebuild: boolean = false) => {
     const bridge = bridgeRef.current;
     if (!bridge) return;
 
     const snapshot = buildSnapshot();
-    const { containers, updates } = toDisplayData(snapshot);
 
     if (forceRebuild || currentScreenRef.current !== snapshot.screen) {
+      // Screen changed → full rebuild
       currentScreenRef.current = snapshot.screen;
+      const containers = getContainers(snapshot);
       await bridge.rebuildPageContainer(new RebuildPageContainer({
         containerTotalNum: containers.length,
         textObject: containers,
       }));
     } else {
+      // Same screen → in-place text updates (no flicker)
+      const updates = getUpdates(snapshot);
       for (const u of updates) {
         await bridge.textContainerUpgrade(new TextContainerUpgrade({
           containerID: u.containerID,
@@ -193,17 +195,17 @@ export default function AppGlasses() {
     }
   }, []);
 
-  const dispatchAction = useCallback((storeAction: any) => {
+  // ── Store action dispatcher ──
+  const dispatch = useCallback((action: StoreAction) => {
     const j = useJourneyStore.getState();
-    const s = useSettingsStore.getState();
     const d = useDisruptionStore.getState();
 
-    switch (storeAction.type) {
+    switch (action.type) {
       case 'MOVE_HIGHLIGHT':
-        j.moveHighlight(storeAction.direction);
+        j.moveHighlight(action.direction);
         break;
       case 'SELECT_DEPARTURE':
-        j.selectDeparture(storeAction.departure);
+        j.selectDeparture(action.departure);
         refreshService();
         break;
       case 'FORCE_REFRESH':
@@ -214,7 +216,7 @@ export default function AppGlasses() {
         break;
       case 'SCROLL_DETAIL':
         j.scrollDetail(
-          storeAction.direction,
+          action.direction,
           Math.max(0, (j.serviceDetail?.callingPoints.length || 0) - 4),
         );
         break;
@@ -222,17 +224,11 @@ export default function AppGlasses() {
         const dep = j.selectedDeparture;
         const detail = j.serviceDetail;
         if (dep && detail) {
-          const depTime = hhmmToEpoch(
-            detail.estimatedDeparture === 'On time'
-              ? detail.scheduledDeparture
-              : detail.estimatedDeparture,
-          );
-          const arrTime = hhmmToEpoch(
-            detail.estimatedArrival === 'On time'
-              ? detail.scheduledArrival
-              : detail.estimatedArrival,
-          );
-          j.startJourney(dep, detail, depTime, arrTime);
+          const estDep = detail.estimatedDeparture !== detail.scheduledDeparture
+            ? detail.estimatedDeparture : detail.scheduledDeparture;
+          const estArr = detail.estimatedArrival !== detail.scheduledArrival
+            ? detail.estimatedArrival : detail.scheduledArrival;
+          j.startJourney(dep, detail, hhmmToEpoch(estDep), hhmmToEpoch(estArr));
           refreshTube();
         }
         break;
@@ -244,79 +240,77 @@ export default function AppGlasses() {
         j.cancelJourney();
         break;
       case 'DISMISS_DISRUPTION':
-        if (d.disruption) {
-          d.acknowledge(d.disruption.serviceId, d.disruption.delayMinutes);
-        }
+        if (d.disruption) d.acknowledge(d.disruption.tripId, d.disruption.delayMinutes);
         d.dismiss();
         j.setScreen(j.previousScreen || 'journey_active');
         break;
-      case 'DISMISS_DISRUPTION_AND_SHOW_ALTERNATIVES':
-        if (d.disruption) {
-          d.acknowledge(d.disruption.serviceId, d.disruption.delayMinutes);
-        }
+      case 'DISMISS_AND_SHOW_ALTERNATIVES':
+        if (d.disruption) d.acknowledge(d.disruption.tripId, d.disruption.delayMinutes);
         d.dismiss();
         j.setScreen('departure_board');
         break;
     }
 
-    // Update display after action
-    setTimeout(() => updateGlassDisplay(), 50);
-  }, [refreshDepartures, refreshService, refreshTube, updateGlassDisplay]);
+    setTimeout(() => updateDisplay(), 50);
+  }, [refreshDepartures, refreshService, refreshTube, updateDisplay]);
 
-  const navigateScreen = useCallback((screen: ScreenId) => {
+  // ── Screen navigator ──
+  const navigate = useCallback((screen: ScreenId) => {
     useJourneyStore.getState().setScreen(screen);
     setupPolling();
-    setTimeout(() => updateGlassDisplay(true), 50);
-  }, [setupPolling, updateGlassDisplay]);
+    setTimeout(() => updateDisplay(true), 50);
+  }, [setupPolling, updateDisplay]);
 
+  // ── Event handler ──
   const handleEvent = useCallback((event: any) => {
     const j = useJourneyStore.getState();
-    const snapshot = buildSnapshot();
 
     // System events
     if (event.sysEvent) {
-      const sysType = event.sysEvent.eventType;
-      if (sysType === OsEventTypeList.FOREGROUND_ENTER_EVENT || sysType === 4) {
+      const t = event.sysEvent.eventType;
+      if (t === OsEventTypeList.FOREGROUND_ENTER_EVENT || t === 4) {
         j.setForeground(true);
         setupPolling();
         refreshDepartures();
-        updateGlassDisplay(true);
+        updateDisplay(true);
         return;
       }
-      if (sysType === OsEventTypeList.FOREGROUND_EXIT_EVENT || sysType === 5) {
+      if (t === OsEventTypeList.FOREGROUND_EXIT_EVENT || t === 5) {
         j.setForeground(false);
-        setupPolling();
+        setupPolling(); // Switches to background polling
         return;
       }
-      if (sysType === OsEventTypeList.ABNORMAL_EXIT_EVENT || sysType === 6) {
-        // State is persisted via zustand persist middleware
+      if (t === OsEventTypeList.ABNORMAL_EXIT_EVENT || t === 6) {
+        // State persisted via zustand persist — will resume on reconnect
         return;
       }
     }
 
     // Text input events
     if (event.textEvent) {
-      const eventType = event.textEvent.eventType;
+      const snapshot = buildSnapshot();
+      const et = event.textEvent.eventType;
       let action: AppAction;
 
-      if (eventType === OsEventTypeList.SCROLL_TOP_EVENT || eventType === 1) {
+      if (et === OsEventTypeList.SCROLL_TOP_EVENT || et === 1) {
         action = { type: 'SCROLL_UP' };
-      } else if (eventType === OsEventTypeList.SCROLL_BOTTOM_EVENT || eventType === 2) {
+      } else if (et === OsEventTypeList.SCROLL_BOTTOM_EVENT || et === 2) {
         action = { type: 'SCROLL_DOWN' };
-      } else if (eventType === OsEventTypeList.DOUBLE_CLICK_EVENT || eventType === 3) {
+      } else if (et === OsEventTypeList.DOUBLE_CLICK_EVENT || et === 3) {
         action = { type: 'BACK' };
       } else {
         // CLICK_EVENT: 0 or undefined
         action = { type: 'SELECT' };
       }
 
-      handleGlassAction(action, snapshot, dispatchAction, navigateScreen, j.previousScreen);
+      handleAction(action, snapshot, dispatch, navigate, j.previousScreen);
     }
-  }, [dispatchAction, navigateScreen, setupPolling, refreshDepartures, updateGlassDisplay]);
+  }, [dispatch, navigate, setupPolling, refreshDepartures, updateDisplay]);
 
+  // ── Init ──
   useEffect(() => {
-    if (isInitRef.current) return;
-    isInitRef.current = true;
+    if (initRef.current) return;
+    initRef.current = true;
 
     (async () => {
       try {
@@ -324,38 +318,36 @@ export default function AppGlasses() {
         const bridge = EvenAppBridge.getInstance();
         bridgeRef.current = bridge;
 
-        // Register event handler
+        // Register event listener
         bridge.onEvenHubEvent(handleEvent);
 
-        // Initial page
+        // Create initial splash page
         const snapshot = buildSnapshot();
-        const { containers } = toDisplayData(snapshot);
-        const result = await bridge.createStartUpPageContainer(new CreateStartUpPageContainer({
-          containerTotalNum: containers.length,
-          textObject: containers,
-        }));
+        const containers = getContainers(snapshot);
+        const result = await bridge.createStartUpPageContainer(
+          new CreateStartUpPageContainer({
+            containerTotalNum: containers.length,
+            textObject: containers,
+          }),
+        );
         if (result !== 0) {
-          console.error('createStartUpPageContainer failed:', result);
+          console.error('createStartUpPageContainer failed with code:', result);
         }
 
-        // Start fetching data
+        // Fetch initial data
         await refreshDepartures();
         setupPolling();
 
-        // Subscribe to store changes for display updates
-        useJourneyStore.subscribe(() => {
-          updateGlassDisplay();
-        });
+        // Subscribe to store changes → update glass display
+        useJourneyStore.subscribe(() => updateDisplay());
       } catch (err) {
-        console.error('Failed to init glasses:', err);
+        console.error('Glass bridge init failed:', err);
       }
     })();
 
-    return () => {
-      clearIntervals();
-    };
-  }, [handleEvent, refreshDepartures, setupPolling, updateGlassDisplay, clearIntervals]);
+    return () => clearIntervals();
+  }, [handleEvent, refreshDepartures, setupPolling, updateDisplay, clearIntervals]);
 
-  // This component renders nothing on the phone — it only manages the glass bridge
+  // Invisible component — only manages the bridge
   return null;
 }

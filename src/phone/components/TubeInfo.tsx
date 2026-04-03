@@ -1,5 +1,4 @@
 import { useJourneyStore } from '../../store/useJourneyStore';
-import { formatSecondsAsMinutes } from '../../utils/time';
 
 const LINE_COLORS: Record<string, string> = {
   northern: 'bg-black text-white',
@@ -38,9 +37,10 @@ export default function TubeInfo() {
           <div className="space-y-1">
             {line.arrivals.slice(0, 3).map((arr, i) => (
               <div key={i} className="flex justify-between text-sm">
-                <span className="text-commute-muted">{arr.destinationName}</span>
+                <span className="text-commute-muted">{arr.destination}</span>
                 <span className="text-commute-text font-medium">
-                  {formatSecondsAsMinutes(arr.timeToStation)}
+                  {arr.departureTime}
+                  {arr.platform && <span className="text-xs text-commute-muted ml-1">P{arr.platform}</span>}
                 </span>
               </div>
             ))}

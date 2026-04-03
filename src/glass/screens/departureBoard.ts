@@ -1,49 +1,59 @@
 import { TextContainerProperty } from '@evenrealities/even_hub_sdk';
-import { DISPLAY_WIDTH, DISPLAY_HEIGHT, HEADER_HEIGHT, BODY_Y, BODY_HEIGHT } from '../../utils/constants';
-import { formatHeader, separator, truncate, formatTwoColumn, LINE_WIDTH } from '../../utils/glass-text';
-import { timeSinceString } from '../../utils/time';
-import type { AppSnapshot, AppAction } from '../shared';
+import { DISPLAY_WIDTH, DISPLAY_HEIGHT } from '../../utils/constants';
+import { rightAlign, separator, truncate, pad, LINE_WIDTH } from '../../utils/glass-text';
 import type { Departure } from '../../types';
+import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 
-function renderDepartureBlock(dep: Departure, isHighlighted: boolean): string {
-  const cursor = isHighlighted ? '▶' : ' ';
-  // Line 1: departure time, platform, delay
-  let delayLabel = 'ON TIME';
-  if (dep.isCancelled) delayLabel = 'CANCELLED';
-  else if (dep.delayMinutes > 0) delayLabel = `⚠ +${dep.delayMinutes}m`;
+function renderDeparture(dep: Departure, highlighted: boolean): string {
+  const cursor = highlighted ? '▶ ' : '  ';
 
-  const line1Left = `${cursor} ${dep.scheduledTime}  Plat ${dep.platform}`;
-  const line1 = formatTwoColumn(line1Left, delayLabel);
+  // Line 1: time, platform, status
+  let status = 'ON TIME';
+  if (dep.isCancelled) status = 'CANCELLED';
+  else if (dep.delayMinutes > 0) status = `⚠ +${dep.delayMinutes} min`;
 
-  // Line 2: journey type, duration, arrival
-  const line2Left = `  ${dep.journeyType} · ${dep.duration}min`;
-  const line2Right = `arr ${dep.estimatedArrival}`;
-  const line2 = formatTwoColumn(line2Left, line2Right);
+  const line1Left = `${cursor}${dep.scheduledTime}   Platform ${dep.platform}`;
+  const line1 = rightAlign(line1Left, status);
 
-  // Line 3: operator
-  const line3 = `  ${truncate(dep.operator, LINE_WIDTH - 2)}`;
+  // Line 2: arrival info
+  const arrInfo = dep.estimatedArrival
+    ? `Arrives ${dep.estimatedArrival}`
+    : '';
+  const typeInfo = dep.routeName || dep.mode;
+  const line2 = `  ${arrInfo}  · ${typeInfo}`;
 
-  return [line1, line2, line3].join('\n');
+  return line1 + '\n' + truncate(line2, LINE_WIDTH);
 }
 
-function renderBody(snapshot: AppSnapshot): string {
+function renderContent(snapshot: AppSnapshot): string {
+  const lines: string[] = [];
+
+  // Header
+  const refreshStr = snapshot.lastRefresh
+    ? `[${new Date(snapshot.lastRefresh).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}]`
+    : '[live]';
+  lines.push(rightAlign(snapshot.routeLabel, refreshStr));
+  lines.push(separator());
+
+  // Departures
   const deps = snapshot.departures.slice(0, 3);
   if (deps.length === 0) {
-    return '\n\n     No departures found.\n\n     Double-press to refresh.';
+    lines.push('');
+    lines.push('  No departures found.');
+    lines.push('');
+    lines.push('  Double-press to refresh.');
+  } else {
+    for (let i = 0; i < deps.length; i++) {
+      if (i > 0) lines.push('');
+      lines.push(renderDeparture(deps[i], i === snapshot.highlightedIndex));
+    }
   }
 
-  const blocks = deps.map((dep, i) =>
-    renderDepartureBlock(dep, i === snapshot.highlightedIndex),
-  );
+  // Pad to fill screen, then action bar
+  while (lines.length < 9) lines.push('');
+  lines.push(rightAlign('↑↓ Navigate  ● Select', '●● Refresh'));
 
-  const lines = blocks.join('\n' + separator() + '\n');
-  const actionBar = '↑↓ Navigate    ● Select    ●● Refresh';
-  return lines + '\n' + separator() + '\n' + actionBar;
-}
-
-function renderHeader(snapshot: AppSnapshot): string {
-  const refreshStr = snapshot.lastRefresh ? timeSinceString(snapshot.lastRefresh) : '...';
-  return formatHeader(snapshot.routeLabel, refreshStr);
+  return lines.join('\n');
 }
 
 export const departureBoardScreen = {
@@ -53,59 +63,39 @@ export const departureBoardScreen = {
         xPosition: 0,
         yPosition: 0,
         width: DISPLAY_WIDTH,
-        height: HEADER_HEIGHT,
+        height: DISPLAY_HEIGHT,
         containerID: 1,
-        containerName: 'dbHeader',
-        isEventCapture: 0,
-        content: renderHeader(snapshot),
-        borderWidth: 0,
-        paddingLength: 2,
-      }),
-      new TextContainerProperty({
-        xPosition: 0,
-        yPosition: BODY_Y,
-        width: DISPLAY_WIDTH,
-        height: BODY_HEIGHT,
-        containerID: 2,
-        containerName: 'dbBody',
+        containerName: 'depBoard',
         isEventCapture: 1,
-        content: renderBody(snapshot),
-        borderWidth: 0,
-        paddingLength: 2,
+        content: renderContent(snapshot),
+        paddingLength: 4,
       }),
     ];
   },
 
   updates(snapshot: AppSnapshot) {
-    const headerContent = renderHeader(snapshot);
-    const bodyContent = renderBody(snapshot);
-    return [
-      { containerID: 1, containerName: 'dbHeader', content: headerContent },
-      { containerID: 2, containerName: 'dbBody', content: bodyContent },
-    ];
+    return [{ containerID: 1, containerName: 'depBoard', content: renderContent(snapshot) }];
   },
 
-  action(action: AppAction, nav: any, snapshot: AppSnapshot, ctx: any) {
+  action(action: AppAction, snapshot: AppSnapshot, ctx: ScreenContext) {
     switch (action.type) {
       case 'SCROLL_UP':
-        ctx.dispatch?.({ type: 'MOVE_HIGHLIGHT', direction: 'up' });
-        return nav;
+        ctx.dispatch({ type: 'MOVE_HIGHLIGHT', direction: 'up' });
+        break;
       case 'SCROLL_DOWN':
-        ctx.dispatch?.({ type: 'MOVE_HIGHLIGHT', direction: 'down' });
-        return nav;
+        ctx.dispatch({ type: 'MOVE_HIGHLIGHT', direction: 'down' });
+        break;
       case 'SELECT': {
         const dep = snapshot.departures[snapshot.highlightedIndex];
         if (dep) {
-          ctx.dispatch?.({ type: 'SELECT_DEPARTURE', departure: dep });
+          ctx.dispatch({ type: 'SELECT_DEPARTURE', departure: dep });
           ctx.navigate('train_detail');
         }
-        return nav;
+        break;
       }
-      case 'REFRESH':
-        ctx.dispatch?.({ type: 'FORCE_REFRESH' });
-        return nav;
-      default:
-        return nav;
+      case 'BACK':
+        ctx.dispatch({ type: 'FORCE_REFRESH' });
+        break;
     }
   },
 };

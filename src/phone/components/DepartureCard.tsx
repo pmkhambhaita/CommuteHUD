@@ -31,17 +31,21 @@ export default function DepartureCard({ departure, isSelected, onSelect }: Props
       <div className="flex justify-between items-start mb-1">
         <div className="flex items-center gap-2">
           <span className="text-lg font-bold text-commute-text">{departure.scheduledTime}</span>
-          <span className="text-xs px-2 py-0.5 rounded bg-commute-accent text-commute-muted">
-            Plat {departure.platform}
-          </span>
+          {departure.platform !== '-' && (
+            <span className="text-xs px-2 py-0.5 rounded bg-commute-accent text-commute-muted">
+              Plat {departure.platform}
+            </span>
+          )}
         </div>
         <span className={`text-sm font-medium ${statusColor}`}>{statusLabel}</span>
       </div>
       <div className="flex justify-between text-sm text-commute-muted">
-        <span>{departure.journeyType} · {departure.duration} min</span>
-        <span>arr {departure.estimatedArrival}</span>
+        <span>{departure.headsign || departure.destination}</span>
       </div>
-      <div className="text-xs text-commute-muted mt-1">{departure.operator}</div>
+      <div className="flex justify-between text-xs text-commute-muted mt-1">
+        <span>{departure.operator}</span>
+        <span>{departure.routeName}</span>
+      </div>
     </button>
   );
 }

@@ -20,12 +20,10 @@ export const POLL_BACKGROUND = 180000;
 export const APPROACHING_MINUTES = 10;
 export const TRANSFER_TIMEOUT_MINUTES = 20;
 
-// Tube station
-export const KGX_NAPTAN = '940GZZLUKSX';
-
-// Station CRS codes
-export const STEVENAGE_CRS = 'SVG';
-export const KINGS_CROSS_CRS = 'KGX';
+// Default stop IDs (Transitous / GTFS)
+export const STEVENAGE_STOP_ID = 'gb:atoc:SVG';
+export const KGX_STOP_ID = 'gb:atoc:KGX';
+export const KGX_TUBE_STOP_ID = 'gb:tfl:940GZZLUKSX';
 
 // Screen IDs
 export const SCREEN = {
@@ -36,3 +34,7 @@ export const SCREEN = {
   DISRUPTION_ALERT: 'disruption_alert',
   TUBE_BOARD: 'tube_board',
 } as const;
+
+// Glass text constants
+export const LINE_WIDTH = 40;
+export const MAX_VISIBLE_STOPS = 4;
