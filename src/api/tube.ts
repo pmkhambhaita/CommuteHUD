@@ -1,7 +1,9 @@
 import type { TubeLineArrivals } from '../types';
 import { TRANSITOUS_BASE } from '../types';
+import { resolveStopId } from './geocode';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
+const resolvedStopIds = new Map<string, string>();
 
 interface TubeResponse {
   lines: TubeLineArrivals[];
@@ -9,25 +11,30 @@ interface TubeResponse {
   station: string;
 }
 
-export async function fetchTubeArrivals(
-  stopId: string,
-  filterLines: string[] = [],
-): Promise<TubeResponse> {
-  const useProxy = !!API_BASE;
-  if (useProxy) {
-    const params = new URLSearchParams({ stopId });
-    if (filterLines.length > 0) params.set('lines', filterLines.join(','));
-    const res = await fetch(`${API_BASE}/api/tube?${params}`);
-    if (!res.ok) throw new Error(`Tube API error: ${res.status}`);
-    return res.json();
-  }
-
-  // Direct Transitous call
-  const params = new URLSearchParams({ stopId, n: '20', arriveBy: 'false' });
+async function tryFetchTubeStoptimes(stopId: string, n: number): Promise<any> {
+  const params = new URLSearchParams({ stopId, n: String(n), arriveBy: 'false' });
   params.append('mode', 'SUBWAY');
   const res = await fetch(`${TRANSITOUS_BASE}/api/v5/stoptimes?${params}`);
-  if (!res.ok) throw new Error(`Transitous tube error: ${res.status}`);
-  const data = await res.json();
+  if (!res.ok) throw new Error(`Tube stoptimes error: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchTubeArrivals(
+  stopIdOrName: string,
+  filterLines: string[] = [],
+): Promise<TubeResponse> {
+  let stopId = resolvedStopIds.get(stopIdOrName) || stopIdOrName;
+  let data: any;
+
+  try {
+    data = await tryFetchTubeStoptimes(stopId, 20);
+  } catch {
+    const resolved = await resolveStopId(stopIdOrName, 'SUBWAY');
+    if (!resolved) throw new Error(`Could not find tube stop: ${stopIdOrName}`);
+    resolvedStopIds.set(stopIdOrName, resolved);
+    stopId = resolved;
+    data = await tryFetchTubeStoptimes(stopId, 20);
+  }
 
   const stopTimes: any[] = data.stopTimes || [];
   const lineMap = new Map<string, any[]>();
@@ -53,25 +60,25 @@ export async function fetchTubeArrivals(
       departureTime: fmtTime(dep),
       delayMinutes: 0,
       mode: st.mode || 'SUBWAY',
-      _epochMs: new Date(dep).getTime(),
+      _ts: new Date(dep).getTime(),
     });
   }
 
   const lines = Array.from(lineMap.entries())
-    .map(([lineId, arrivals]) => ({
-      lineId,
-      lineName: arrivals[0]?.lineName || lineId,
+    .map(([id, arrivals]) => ({
+      lineId: id,
+      lineName: arrivals[0]?.lineName || id,
       arrivals: arrivals
-        .sort((a: any, b: any) => a._epochMs - b._epochMs)
+        .sort((a: any, b: any) => a._ts - b._ts)
         .slice(0, 5)
-        .map(({ _epochMs, ...rest }: any) => rest),
+        .map(({ _ts, ...rest }: any) => rest),
     }))
     .sort((a, b) => a.lineName.localeCompare(b.lineName));
 
   return {
     lines,
     generatedAt: new Date().toISOString(),
-    station: data.place?.name || stopId,
+    station: data.place?.name || stopIdOrName,
   };
 }
 

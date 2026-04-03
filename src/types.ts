@@ -185,13 +185,13 @@ export interface UserSettings {
   disruptionThreshold: number; // minutes
 }
 
-// Stevenage and KGX stop IDs for Transitous (GTFS-based)
+// Default settings — stop IDs will be auto-resolved via geocode if they fail
 export const DEFAULT_SETTINGS: UserSettings = {
   origin: 'Stevenage',
-  originStopId: 'gb:atoc:SVG', // Will be resolved via geocoding
+  originStopId: 'Stevenage', // Will auto-resolve via /api/v1/geocode
   destination: "London King's Cross",
-  destinationStopId: 'gb:atoc:KGX',
-  tubeStationStopId: 'gb:tfl:940GZZLUKSX',
+  destinationStopId: "London King's Cross",
+  tubeStationStopId: "King's Cross St. Pancras",
   tubeLines: ['victoria', 'piccadilly', 'northern', 'metropolitan', 'hammersmith-city', 'circle'],
   disruptionThreshold: 3,
 };

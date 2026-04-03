@@ -5,15 +5,15 @@ import type { AppSnapshot, AppAction, ScreenContext } from '../shared';
 const SPLASH_CONTENT = [
   '',
   '',
-  '       ╔══════════════════════════╗',
-  '       ║                          ║',
-  '       ║        C O M M U T E     ║',
-  '       ║        ─────────────     ║',
-  '       ║   Smart Commute HUD      ║',
-  '       ║                          ║',
-  '       ╚══════════════════════════╝',
+  '  ──────────────────────────────',
   '',
-  '        Loading departures...',
+  '        C O M M U T E',
+  '        ─────────────',
+  '    Smart Commute HUD',
+  '',
+  '  ──────────────────────────────',
+  '',
+  '     Loading departures...',
 ].join('\n');
 
 export const splashScreen = {
