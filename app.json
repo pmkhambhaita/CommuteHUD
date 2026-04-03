@@ -1,15 +1,19 @@
 {
-  "appId": "commute-hud",
+  "package_id": "com.commutehud.commute",
+  "edition": "202601",
   "name": "Commute",
-  "description": "Real-time commute companion HUD for Stevenage to London Kings Cross",
   "version": "1.0.0",
-  "author": "CommuteHUD",
-  "icon": "public/icon.png",
-  "entry": "index.html",
-  "permissions": ["bluetooth", "network"],
-  "display": {
-    "width": 576,
-    "height": 288,
-    "colorDepth": 4
-  }
+  "min_app_version": "2.0.0",
+  "min_sdk_version": "0.0.7",
+  "entrypoint": "index.html",
+  "permissions": [
+    {
+      "name": "network",
+      "desc": "Fetches live train departures and tube arrivals from Transitous API.",
+      "whitelist": [
+        "https://api.transitous.org"
+      ]
+    }
+  ],
+  "supported_languages": ["en"]
 }
