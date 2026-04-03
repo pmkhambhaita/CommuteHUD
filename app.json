@@ -1,0 +1,15 @@
+{
+  "appId": "commute-hud",
+  "name": "Commute",
+  "description": "Real-time commute companion HUD for Stevenage to London Kings Cross",
+  "version": "1.0.0",
+  "author": "CommuteHUD",
+  "icon": "public/icon.png",
+  "entry": "index.html",
+  "permissions": ["bluetooth", "network"],
+  "display": {
+    "width": 576,
+    "height": 288,
+    "colorDepth": 4
+  }
+}
